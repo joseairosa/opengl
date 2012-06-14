@@ -22,46 +22,34 @@
 
 #include "common.h"
 
-/* HACK experimental API */
-void *rb_thread_call_with_gvl(void *(*func)(void *), void *data1);
-
-static ID call_id; /* 'call' method id */
-static VALUE idle_func = Qnil;
-static VALUE menustate_func = Qnil;
-static VALUE menustatus_func = Qnil;
-static VALUE timer_func = Qnil;
+static ID callId; /* 'call' method id */
 
 /*
- * macros for registering callbacks -
- *
- * most GLUT callback functions are part of specific window state, so
- * the same callback may have different functions for each GLUT window
- *
- * callbacks that are not tied to specific window (idle,timer,menustate) are
- * registered manually
- */
+  macros for registering callbacks -
+  
+  most GLUT callback functions are part of specific window state, so
+  the same callback may have different functions for each GLUT window
+  
+  callbacks that are not tied to specific window (idle,timer,menustate) are registered manually
+*/
 
-#define WINDOW_CALLBACK_SETUP(_funcname)                                   \
-static VALUE _funcname = Qnil;                                             \
-static VALUE                                                               \
-glut_ ## _funcname(VALUE self, VALUE callback)                             \
-{                                                                          \
-  int win = glutGetWindow();                                               \
-                                                                           \
-  if (win == 0) {                                                          \
-    rb_raise(rb_eRuntimeError, "glut%s needs current window", #_funcname); \
-  }                                                                        \
-                                                                           \
-  callback = check_callback(self, callback);                               \
-                                                                           \
-  rb_ary_store(_funcname, win, callback);                                  \
-                                                                           \
-	if (NIL_P(callback))                                                     \
-		glut##_funcname(NULL);                                                 \
-  else                                                                     \
-		glut##_funcname(&glut_##_funcname##Callback0);                         \
-                                                                           \
-  return Qnil;                                                             \
+#define WINDOW_CALLBACK_SETUP(_funcname) \
+static VALUE _funcname = Qnil; \
+static VALUE \
+glut_ ## _funcname(obj, callback) \
+VALUE obj, callback; \
+{ \
+    int win; \
+    callback = check_callback(obj, callback); \
+    win = glutGetWindow(); \
+    if (win == 0) \
+        rb_raise(rb_eRuntimeError, "glut%s needs current window", #_funcname); \
+    rb_ary_store(_funcname, win, callback); \
+		if(NIL_P(callback)) \
+			glut ## _funcname(NULL); \
+		else \
+			glut##_funcname(&glut_##_funcname##Callback); \
+    return Qnil; \
 }
 
 #define WINDOW_CALLBACK_DEFINE(_funcname) \
@@ -86,7 +74,7 @@ check_callback(VALUE self, VALUE callback)
 	if (NIL_P(callback))
     return callback;
 
-  if (rb_respond_to(callback, call_id))
+  if (rb_respond_to(callback, callId))
     return callback;
 
   if (SYMBOL_P(callback))
@@ -134,6 +122,7 @@ static VALUE glut_Init( int argc, VALUE * argv, VALUE obj)
 	return new_argv;
 }
 
+
 static VALUE glut_InitDisplayMode(obj,arg1)
 VALUE obj,arg1;
 {
@@ -163,6 +152,7 @@ VALUE obj,arg1,arg2;
 	return Qnil;
 }
 
+
 static VALUE
 glut_InitWindowSize(obj, arg1, arg2)
 VALUE obj,arg1,arg2;
@@ -174,49 +164,50 @@ VALUE obj,arg1,arg2;
 	return Qnil;
 }
 
-VALUE glut_MainLoop0(void *ignored) {
+/*
+ * No way to unblock glutMainLoop, so fake it?
+ */
+static void
+glut_MainLoop_unblock(void *ignored) {
+}
+
+static VALUE glut_MainLoop0(void *ignored) {
   glutMainLoop();
-
-  return Qnil; /* never reached */
-}
-
-static VALUE
-glut_MainLoop(void) {
-  rb_thread_blocking_region(glut_MainLoop0, NULL, NULL, NULL);
-
-  return Qnil; /* never reached */
-}
-
-static VALUE
-glut_CheckLoop(void) {
-  rb_warn("calling fake CheckLoop implementation which never returns");
-
-  glut_MainLoop();
 
   return Qnil;
 }
 
-static void GLUTCALLBACK glut_DisplayFuncCallback0(void);
-static void GLUTCALLBACK glut_ReshapeFuncCallback0(int, int);
-static void GLUTCALLBACK glut_KeyboardFuncCallback0(unsigned char, int, int);
-static void GLUTCALLBACK glut_MouseFuncCallback0(int, int, int, int);
-static void GLUTCALLBACK glut_MotionFuncCallback0(int, int);
-static void GLUTCALLBACK glut_PassiveMotionFuncCallback0(int, int);
-static void GLUTCALLBACK glut_EntryFuncCallback0(int);
-static void GLUTCALLBACK glut_VisibilityFuncCallback0(int);
-static void GLUTCALLBACK glut_SpecialFuncCallback0(int, int, int);
-static void GLUTCALLBACK glut_SpaceballMotionFuncCallback0(int, int, int);
-static void GLUTCALLBACK glut_SpaceballRotateFuncCallback0(int, int, int);
-static void GLUTCALLBACK glut_SpaceballButtonFuncCallback0(int, int);
-static void GLUTCALLBACK glut_ButtonBoxFuncCallback0(int, int);
-static void GLUTCALLBACK glut_DialsFuncCallback0(int, int);
-static void GLUTCALLBACK glut_TabletMotionFuncCallback0(int, int);
-static void GLUTCALLBACK glut_TabletButtonFuncCallback0(int, int, int, int);
-static void GLUTCALLBACK glut_OverlayDisplayFuncCallback0(void);
-static void GLUTCALLBACK glut_WindowStatusFuncCallback0(int);
-static void GLUTCALLBACK glut_JoystickFuncCallback0(unsigned int, int, int, int);
-static void GLUTCALLBACK glut_KeyboardUpFuncCallback0(unsigned char, int, int);
-static void GLUTCALLBACK glut_SpecialUpFuncCallback0(int, int, int);
+static VALUE
+glut_MainLoop(void) {
+  /* need to acquire GVL in callbacks */
+  /*rb_thread_blocking_region(glut_MainLoop0, (void *)NULL, glut_MainLoop_unblock, NULL);*/
+
+  glut_MainLoop0(NULL);
+
+  return Qnil; /* never reached */
+}
+
+static void GLUTCALLBACK glut_DisplayFuncCallback(void);
+static void GLUTCALLBACK glut_ReshapeFuncCallback(int,int);
+static void GLUTCALLBACK glut_KeyboardFuncCallback(unsigned char, int, int);
+static void GLUTCALLBACK glut_MouseFuncCallback(int, int, int, int);
+static void GLUTCALLBACK glut_MotionFuncCallback(int, int);
+static void GLUTCALLBACK glut_PassiveMotionFuncCallback(int, int);
+static void GLUTCALLBACK glut_EntryFuncCallback(int);
+static void GLUTCALLBACK glut_VisibilityFuncCallback(int);
+static void GLUTCALLBACK glut_SpecialFuncCallback(int,int,int);
+static void GLUTCALLBACK glut_SpaceballMotionFuncCallback(int,int,int);
+static void GLUTCALLBACK glut_SpaceballRotateFuncCallback(int,int,int);
+static void GLUTCALLBACK glut_SpaceballButtonFuncCallback(int,int);
+static void GLUTCALLBACK glut_ButtonBoxFuncCallback(int,int);
+static void GLUTCALLBACK glut_DialsFuncCallback(int,int);
+static void GLUTCALLBACK glut_TabletMotionFuncCallback(int,int);
+static void GLUTCALLBACK glut_TabletButtonFuncCallback(int,int,int,int);
+static void GLUTCALLBACK glut_OverlayDisplayFuncCallback(void);
+static void GLUTCALLBACK glut_WindowStatusFuncCallback(int);
+static void GLUTCALLBACK glut_JoystickFuncCallback(unsigned int,int,int,int);
+static void GLUTCALLBACK glut_KeyboardUpFuncCallback(unsigned char,int,int);
+static void GLUTCALLBACK glut_SpecialUpFuncCallback(int,int,int);
 
 WINDOW_CALLBACK_SETUP(DisplayFunc)
 WINDOW_CALLBACK_SETUP(ReshapeFunc)
@@ -260,7 +251,7 @@ VALUE obj,callback,arg2;
 	if (NIL_P(callback))
 		glutJoystickFunc(NULL, pollinterval);
 	else
-		glutJoystickFunc(glut_JoystickFuncCallback0, pollinterval);
+		glutJoystickFunc(glut_JoystickFuncCallback, pollinterval);
 
 	return Qnil;
 }
@@ -308,6 +299,7 @@ VALUE obj,arg1;
 }
 
 GLUT_SIMPLE_FUNCTION(PostRedisplay)
+
 GLUT_SIMPLE_FUNCTION(SwapBuffers)
 
 static VALUE
@@ -319,6 +311,7 @@ VALUE obj;
 	return INT2NUM(ret);
 }
 
+
 static VALUE
 glut_SetWindow(obj,arg1)
 VALUE obj,arg1;
@@ -329,6 +322,7 @@ VALUE obj,arg1;
 	return Qnil;
 }
 
+
 static VALUE
 glut_SetWindowTitle(obj,arg1)
 VALUE obj,arg1;
@@ -338,6 +332,7 @@ VALUE obj,arg1;
 	return Qnil;
 }
 
+
 static VALUE
 glut_SetIconTitle(obj, arg1)
 VALUE obj,arg1;
@@ -346,6 +341,7 @@ VALUE obj,arg1;
 	glutSetIconTitle(RSTRING_PTR(arg1));
 	return Qnil;
 }
+
 
 static VALUE
 glut_PositionWindow(obj,arg1,arg2)
@@ -358,6 +354,7 @@ VALUE obj,arg1,arg2;
 	return Qnil;
 }
 
+
 static VALUE
 glut_ReshapeWindow(obj,arg1,arg2)
 VALUE obj,arg1,arg2;
@@ -369,12 +366,14 @@ VALUE obj,arg1,arg2;
 	return Qnil;
 }
 
+
 GLUT_SIMPLE_FUNCTION(PopWindow)
 GLUT_SIMPLE_FUNCTION(PushWindow)
 GLUT_SIMPLE_FUNCTION(IconifyWindow)
 GLUT_SIMPLE_FUNCTION(ShowWindow)
 GLUT_SIMPLE_FUNCTION(HideWindow)
 GLUT_SIMPLE_FUNCTION(FullScreen)
+
 
 static VALUE
 glut_SetCursor(obj,arg1)
@@ -422,11 +421,11 @@ glut_CreateMenuCallback(int value)
 	VALUE func;
 	int menu;
 	menu = glutGetMenu();
-	func = rb_ary_entry(g_menucallback, menu);
-
-	rb_funcall(func, call_id, 1, INT2NUM(value));
+	func = rb_ary_entry(g_menucallback,menu);
+	rb_funcall(func, callId, 1, INT2NUM(value));
 }
 
+    
 static VALUE
 glut_CreateMenu(obj,callback)
 VALUE obj,callback;
@@ -445,6 +444,7 @@ VALUE obj,callback;
 	return INT2FIX(menu);
 }
 
+    
 static VALUE
 glut_DestroyMenu(obj,arg1)
 VALUE obj,arg1;
@@ -457,6 +457,7 @@ VALUE obj,arg1;
 	return Qnil;
 }
 
+
 static VALUE
 glut_GetMenu(obj)
 VALUE obj;
@@ -466,6 +467,7 @@ VALUE obj;
 	return INT2NUM(ret);
 }
 
+
 static VALUE
 glut_SetMenu(obj,arg1)
 VALUE obj,arg1;
@@ -473,6 +475,7 @@ VALUE obj,arg1;
 	glutSetMenu(NUM2INT(arg1));
 	return Qnil;
 }
+
 
 static VALUE
 glut_AddMenuEntry(obj,arg1,arg2)
@@ -483,6 +486,7 @@ VALUE obj,arg1,arg2;
 	return Qnil;
 }
 
+
 static VALUE
 glut_AddSubMenu(obj,arg1,arg2)
 VALUE obj,arg1,arg2;
@@ -492,6 +496,7 @@ VALUE obj,arg1,arg2;
 	return Qnil;
 }
 
+
 static VALUE glut_ChangeToMenuEntry(obj,arg1,arg2,arg3)
 VALUE obj,arg1,arg2,arg3;
 {
@@ -499,6 +504,7 @@ VALUE obj,arg1,arg2,arg3;
 	glutChangeToMenuEntry(NUM2INT(arg1), RSTRING_PTR(arg2), NUM2INT(arg3));
 	return Qnil;
 }
+
 
 static VALUE glut_ChangeToSubMenu(obj,arg1,arg2,arg3)
 VALUE obj,arg1,arg2,arg3;
@@ -508,11 +514,13 @@ VALUE obj,arg1,arg2,arg3;
 	return Qnil;
 }
 
+
 static VALUE glut_RemoveMenuItem( VALUE obj, VALUE arg1 )
 {
 	glutRemoveMenuItem(NUM2INT(arg1));
 	return Qnil;
 }
+
 
 static VALUE
 glut_AttachMenu(obj,arg1)
@@ -522,6 +530,7 @@ VALUE obj, arg1;
 	return Qnil;
 }
 
+
 static VALUE
 glut_DetachMenu(obj,arg1)
 VALUE obj, arg1;
@@ -530,695 +539,343 @@ VALUE obj, arg1;
 	return Qnil;
 }
 
-struct callback_args {
-  union {
-    int button;
-    int dial;
-    int special;
-    int state;
-    int value;
-    int width;
-    int x;
-    unsigned char key;
-    unsigned int button_mask;
-  } arg0;
-  union {
-    int height;
-    int state;
-    int value;
-    int x;
-    int y;
-  } arg1;
-  union {
-    int x;
-    int y;
-    int z;
-  } arg2;
-  union {
-    int y;
-    int z;
-  } arg3;
-} ;
 
-typedef void *(*gvl_call)(void *);
-
-static struct callback_args *
-alloc_callback_args(void) {
-  struct callback_args *args;
-  args = (struct callback_args *)malloc(sizeof(struct callback_args));
-
-  if (args == NULL) {
-    fprintf(stderr, "[BUG] out of memory in opengl callback");
-    abort();
-  }
-
-  return args;
-}
-
-static void *
-glut_DisplayFuncCallback(void *ignored) {
+/* GLUT  sub-API. */
+static void GLUTCALLBACK glut_DisplayFuncCallback(void)
+{
 	VALUE func;
-
 	func = rb_ary_entry(DisplayFunc, glutGetWindow());
-
 	if (!NIL_P(func))
-    rb_funcall(func, call_id, 0);
-
-  return NULL;
+		rb_funcall(func, callId, 0);
 }
+
 
 static void GLUTCALLBACK
-glut_DisplayFuncCallback0(void) {
-  rb_thread_call_with_gvl(glut_DisplayFuncCallback, NULL);
-}
-
-static void *
-glut_ReshapeFuncCallback(struct callback_args *args) {
-	VALUE func   = rb_ary_entry(ReshapeFunc, glutGetWindow());
-  VALUE width  = INT2FIX(args->arg0.width);
-  VALUE height = INT2FIX(args->arg1.height);
-
+glut_ReshapeFuncCallback(width, height)
+int width, height;
+{
+	VALUE func;
+	func = rb_ary_entry( ReshapeFunc, glutGetWindow());
 	if (!NIL_P(func))
-		rb_funcall(func, call_id, 2, width, height);
-
-  return NULL;
+		rb_funcall(func, callId, 2, INT2FIX(width), INT2FIX(height));
 }
+
 
 static void GLUTCALLBACK
-glut_ReshapeFuncCallback0(int width, int height) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.width = width;
-  args->arg1.height = height;
-
-  rb_thread_call_with_gvl((gvl_call)glut_ReshapeFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_KeyboardFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(KeyboardFunc, glutGetWindow());
+glut_KeyboardFuncCallback(unsigned char key, int x, int y)
+{
+	VALUE func;
+	func = rb_ary_entry(KeyboardFunc, glutGetWindow());
+	if (!NIL_P(func))
 #if HAVE_SINGLE_BYTE_STRINGS
-  VALUE key = rb_str_new((char *)args->arg0.key, 1);
+		rb_funcall(func, callId, 3, rb_str_new((char *)&key, 1), INT2FIX(x), INT2FIX(y));
 #else
-  VALUE key = UINT2FIX((unsigned char)args->arg0.key);
+		rb_funcall(func, callId, 3, INT2FIX(key), INT2FIX(x), INT2FIX(y));
 #endif
-  VALUE x = INT2FIX(args->arg1.x);
-  VALUE y = INT2FIX(args->arg2.y);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 3, key, x, y);
-
-  return NULL;
 }
+
 
 static void GLUTCALLBACK
-glut_KeyboardFuncCallback0(unsigned char key, int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.key = key;
-  args->arg1.x   = x;
-  args->arg2.y   = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_KeyboardFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_KeyboardUpFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(KeyboardUpFunc, glutGetWindow());
-#if HAVE_SINGLE_BYTE_STRINGS
-  VALUE key = rb_str_new((char *)args->arg0.key, 1);
-#else
-  VALUE key = UINT2FIX((unsigned char)args->arg0.key);
-#endif
-  VALUE x = INT2FIX((int)args->arg1.x);
-  VALUE y = INT2FIX((int)args->arg2.y);
-
+glut_MouseFuncCallback(button, state, x, y)
+int button, state, x, y;
+{
+	VALUE func;
+	func = rb_ary_entry(MouseFunc, glutGetWindow());
 	if (!NIL_P(func))
-		rb_funcall(func, call_id, 3, key, x, y);
-
-  return NULL;
+		rb_funcall(func, callId, 4, INT2FIX(button), INT2FIX(state), INT2FIX(x), INT2FIX(y));
 }
+
 
 static void GLUTCALLBACK
-glut_KeyboardUpFuncCallback0(unsigned char key, int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.key = key;
-  args->arg1.x   = x;
-  args->arg2.y   = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_KeyboardUpFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_MouseFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(MouseFunc, glutGetWindow());
-
-  VALUE button = INT2FIX(args->arg0.button);
-  VALUE state  = INT2FIX(args->arg1.state);
-  VALUE x      = INT2FIX(args->arg2.x);
-  VALUE y      = INT2FIX(args->arg3.y);
-
+glut_MotionFuncCallback(x, y)
+int x, y;
+{
+	VALUE func;
+	func = rb_ary_entry(MotionFunc, glutGetWindow());
 	if (!NIL_P(func))
-		rb_funcall(func, call_id, 4, button, state, x, y);
-
-  return NULL;
+		rb_funcall(func, callId, 2,INT2FIX(x), INT2FIX(y));
 }
+
 
 static void GLUTCALLBACK
-glut_MouseFuncCallback0(int button, int state, int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.button = button;
-  args->arg1.state  = state;
-  args->arg2.x      = x;
-  args->arg3.y      = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_MouseFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_MotionFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(MotionFunc, glutGetWindow());
-  VALUE x = INT2FIX(args->arg0.x);
-  VALUE y = INT2FIX(args->arg1.y);
-
+glut_PassiveMotionFuncCallback(x, y)
+int x, y;
+{
+	VALUE func;
+	func = rb_ary_entry(PassiveMotionFunc, glutGetWindow());
 	if (!NIL_P(func))
-		rb_funcall(func, call_id, 2, x, y); 
-
-  return NULL;
+		rb_funcall(func, callId, 2,INT2FIX(x), INT2FIX(y));
 }
+
 
 static void GLUTCALLBACK
-glut_MotionFuncCallback0(int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.x = x;
-  args->arg1.y = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_MotionFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_PassiveMotionFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(PassiveMotionFunc, glutGetWindow());
-  VALUE x    = INT2FIX(args->arg0.x);
-  VALUE y    = INT2FIX(args->arg1.y);
-
+glut_EntryFuncCallback(state)
+int state;
+{
+	VALUE func;
+	func = rb_ary_entry(EntryFunc,glutGetWindow());
 	if (!NIL_P(func))
-		rb_funcall(func, call_id, 2, x, y);
-
-  return NULL;
+		rb_funcall(func, callId, 1, INT2NUM(state));
 }
+
 
 static void GLUTCALLBACK
-glut_PassiveMotionFuncCallback0(int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.x = x;
-  args->arg1.y = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_PassiveMotionFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_EntryFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(EntryFunc, glutGetWindow());
-  VALUE state = INT2NUM(args->arg0.state);
-
+glut_VisibilityFuncCallback(state)
+int state;
+{
+	VALUE func;
+	func = rb_ary_entry(VisibilityFunc, glutGetWindow());
 	if (!NIL_P(func))
-		rb_funcall(func, call_id, 1, state);
-
-  return NULL;
+		rb_funcall(func, callId, 1, INT2NUM(state));
 }
 
+
+static VALUE idle_func = Qnil;
 static void GLUTCALLBACK
-glut_EntryFuncCallback0(int state) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.state = state;
-
-  rb_thread_call_with_gvl((gvl_call)glut_EntryFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_VisibilityFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(VisibilityFunc, glutGetWindow());
-  VALUE state = INT2NUM(args->arg0.state);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 1, state);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_VisibilityFuncCallback0(int state) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.state = state;
-
-  rb_thread_call_with_gvl((gvl_call)glut_VisibilityFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_IdleFuncCallback(void *ignored) {
+glut_IdleFuncCallback(void)
+{
 	if (!NIL_P(idle_func))
-		rb_funcall(idle_func, call_id, 0);
-
-  return NULL;
+		rb_funcall(idle_func, callId, 0);
 }
 
-static void GLUTCALLBACK
-glut_IdleFuncCallback0(void) {
-  rb_thread_call_with_gvl((gvl_call)glut_IdleFuncCallback, NULL);
-}
 
 static VALUE
-glut_IdleFunc(VALUE self, VALUE callback) {
-  callback = check_callback(self, callback);
+glut_IdleFunc(obj, callback)
+VALUE obj, callback;
+{
+  callback = check_callback(obj, callback);
 
 	idle_func = callback;
 
 	if (NIL_P(callback))
 		glutIdleFunc(NULL);
 	else
-		glutIdleFunc(glut_IdleFuncCallback0);
+		glutIdleFunc(glut_IdleFuncCallback);
 
 	return Qnil;
 }
 
-static void *
-glut_TimerFuncCallback(struct callback_args *args) {
-  VALUE value = INT2NUM(args->arg0.value);
 
+static VALUE timer_func = Qnil;
+static void GLUTCALLBACK
+glut_TimerFuncCallback(int value)
+{
 	if (!NIL_P(timer_func))
-		rb_funcall(timer_func, call_id, 1, value);
-
-  return NULL;
+		rb_funcall(timer_func, callId, 1, INT2NUM(value));
 }
 
-static void GLUTCALLBACK
-glut_TimerFuncCallback0(int value) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.value = value;
-
-  rb_thread_call_with_gvl((gvl_call)glut_TimerFuncCallback, args);
-
-  free(args);
-}
 
 static VALUE
-glut_TimerFunc(VALUE self, VALUE _msec, VALUE callback, VALUE _value) {
-	unsigned int msec = NUM2UINT(_msec);
-	int value = NUM2INT(_value);
+glut_TimerFunc(obj, arg1, callback, arg3)
+VALUE obj,arg1,callback,arg3;
+{
+	unsigned int millis;
+	int value;
+	millis = (unsigned int)NUM2INT(arg1);
+	value = NUM2INT(arg3);
+  callback = check_callback(obj, callback);
 
-  timer_func = check_callback(self, callback);
+	timer_func = callback;
 
-	glutTimerFunc(msec, glut_TimerFuncCallback0, value);
+	glutTimerFunc(millis, glut_TimerFuncCallback, value);
 
 	return Qnil;
 }
 
-static void *
-glut_MenuStateFuncCallback(struct callback_args *args) {
-  VALUE state = INT2NUM(args->arg0.state);
 
-	if (!NIL_P(menustate_func))
-		rb_funcall(menustate_func, call_id, 1, state);
-
-  return NULL;
-}
-
+static VALUE menustate_func = Qnil;
 static void GLUTCALLBACK
-glut_MenuStateFuncCallback0(int state) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.state = state;
-
-  rb_thread_call_with_gvl((gvl_call)glut_MenuStateFuncCallback, args);
-
-  free(args);
+glut_MenuStateFuncCallback(int state)
+{
+	if (!NIL_P(menustate_func))
+		rb_funcall(menustate_func, callId, 1, INT2NUM(state));
 }
+
 
 static VALUE
-glut_MenuStateFunc(VALUE self, VALUE callback) {
-  menustate_func = check_callback(self, callback);
+glut_MenuStateFunc(obj, callback)
+VALUE obj, callback;
+{
+  callback = check_callback(obj, callback);
 
-	if (NIL_P(menustate_func))
+	menustate_func = callback;
+
+	if (NIL_P(callback))
 		glutMenuStateFunc(NULL);
 	else
-		glutMenuStateFunc(glut_MenuStateFuncCallback0);
+		glutMenuStateFunc(glut_MenuStateFuncCallback);
 
 	return Qnil;
 }
 
-static void *
-glut_MenuStatusFuncCallback(struct callback_args *args) {
-  VALUE state = INT2NUM(args->arg0.state);
-  VALUE x     = INT2NUM(args->arg1.x);
-  VALUE y     = INT2NUM(args->arg2.y);
-
-	if (!NIL_P(menustatus_func))
-		rb_funcall(menustatus_func, call_id, 3, state, x, y);
-
-  return NULL;
-}
-
+static VALUE menustatus_func = Qnil;
 static void GLUTCALLBACK
-glut_MenuStatusFuncCallback0(int state, int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.state = state;
-  args->arg1.x     = x;
-  args->arg2.y     = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_MenuStatusFuncCallback, args);
-
-  free(args);
+glut_MenuStatusFuncCallback(int state,int x,int y)
+{
+	if (!NIL_P(menustatus_func))
+		rb_funcall(menustatus_func, callId, 3, INT2NUM(state),INT2NUM(x),INT2NUM(y));
 }
 
 static VALUE
-glut_MenuStatusFunc(VALUE self, VALUE callback) {
-  menustatus_func = check_callback(self, callback);
+glut_MenuStatusFunc(obj, callback)
+VALUE obj, callback;
+{
+  callback = check_callback(obj, callback);
 
-	if (NIL_P(menustatus_func))
+	menustatus_func = callback;
+
+	if (NIL_P(callback))
 		glutMenuStatusFunc(NULL);
 	else
-		glutMenuStatusFunc(glut_MenuStatusFuncCallback0);
+		glutMenuStatusFunc(glut_MenuStatusFuncCallback);
 
 	return Qnil;
 }
 
-static void *
-glut_SpecialFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(SpecialFunc, glutGetWindow());
-  VALUE key  = INT2NUM(args->arg0.key);
-  VALUE x    = INT2NUM(args->arg1.x);
-  VALUE y    = INT2NUM(args->arg2.y);
-
+static void GLUTCALLBACK
+glut_SpecialFuncCallback(key, x, y)
+int key, x, y;
+{
+	VALUE func;
+	func = rb_ary_entry(SpecialFunc, glutGetWindow());
 	if (!NIL_P(func))
-		rb_funcall(func, call_id, 3, key, x, y);
+		rb_funcall(func, callId, 3,INT2NUM(key), INT2FIX(x), INT2FIX(y));
+}
 
-  return NULL;
+
+static void GLUTCALLBACK
+glut_SpaceballMotionFuncCallback(x, y, z)
+int x,y,z;
+{
+	VALUE func;
+	func = rb_ary_entry(SpaceballMotionFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 3,INT2NUM(x), INT2FIX(y), INT2FIX(z));
+}
+
+
+static void GLUTCALLBACK
+glut_SpaceballRotateFuncCallback(x, y, z)
+int x,y,z;
+{
+	VALUE func;
+	func = rb_ary_entry(SpaceballRotateFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 3,INT2NUM(x), INT2FIX(y), INT2FIX(z));
+}
+
+
+static void GLUTCALLBACK
+glut_SpaceballButtonFuncCallback(button, state)
+int button, state;
+{
+	VALUE func;
+	func = rb_ary_entry(SpaceballButtonFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 2,INT2NUM(button), INT2NUM(state));
+}
+
+
+static void GLUTCALLBACK
+glut_ButtonBoxFuncCallback(button, state)
+int button, state;
+{
+	VALUE func;
+	func = rb_ary_entry(ButtonBoxFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 2,INT2NUM(button), INT2NUM(state));
+}
+
+
+static void GLUTCALLBACK
+glut_DialsFuncCallback(dial, value)
+int dial, value;
+{
+	VALUE func;
+	func = rb_ary_entry(DialsFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 2,INT2NUM(dial), INT2NUM(value));
+}
+
+
+static void GLUTCALLBACK
+glut_TabletMotionFuncCallback(x, y)
+int x, y;
+{
+	VALUE func;
+	func = rb_ary_entry(TabletMotionFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 2,INT2NUM(x), INT2NUM(y));
+}
+
+
+static void GLUTCALLBACK
+glut_TabletButtonFuncCallback(button, state, x, y)
+int button, state, x, y;
+{
+	VALUE func;
+	func = rb_ary_entry(TabletButtonFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 4, INT2FIX(button), INT2NUM(state), INT2NUM(x), INT2NUM(y));
+}
+
+
+static void GLUTCALLBACK
+glut_OverlayDisplayFuncCallback()
+{
+	VALUE func;
+	func = rb_ary_entry(OverlayDisplayFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 0);
+}
+
+
+static void GLUTCALLBACK
+glut_WindowStatusFuncCallback(state)
+int state;
+{
+	VALUE func;
+	func = rb_ary_entry(WindowStatusFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 1, INT2NUM(state));
+}
+
+
+static void GLUTCALLBACK
+glut_JoystickFuncCallback(buttonMask,x,y,z)
+unsigned int buttonMask;
+int x,y,z;
+{
+	VALUE func;
+	func = rb_ary_entry(JoystickFunc, glutGetWindow());
+	if (!NIL_P(func))
+		rb_funcall(func, callId, 4, INT2NUM(buttonMask),INT2NUM(x),INT2NUM(y),INT2NUM(z));
 }
 
 static void GLUTCALLBACK
-glut_SpecialFuncCallback0(int key, int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.key = key;
-  args->arg1.x   = x;
-  args->arg2.y   = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_SpecialFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_SpecialUpFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(SpecialUpFunc, glutGetWindow());
-  VALUE key  = INT2NUM(args->arg0.key);
-  VALUE x    = INT2NUM(args->arg1.x);
-  VALUE y    = INT2NUM(args->arg2.y);
-
+glut_KeyboardUpFuncCallback(unsigned char key, int x, int y)
+{
+	VALUE func;
+	func = rb_ary_entry(KeyboardUpFunc, glutGetWindow());
 	if (!NIL_P(func))
-		rb_funcall(func, call_id, 3, key, x, y);
-
-  return NULL;
+#if HAVE_SINGLE_BYTE_STRINGS
+		rb_funcall(func, callId, 3, rb_funcall(INT2FIX(key),rb_intern("chr"),0), INT2FIX(x), INT2FIX(y));
+#else
+		rb_funcall(func, callId, 3, INT2FIX(key), INT2FIX(x), INT2FIX(y));
+#endif
 }
 
 static void GLUTCALLBACK
-glut_SpecialUpFuncCallback0(int key, int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.key = key;
-  args->arg1.x   = x;
-  args->arg2.y   = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_SpecialUpFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_SpaceballMotionFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(SpaceballMotionFunc, glutGetWindow());
-  VALUE x    = INT2NUM(args->arg0.x);
-  VALUE y    = INT2NUM(args->arg1.y);
-  VALUE z    = INT2NUM(args->arg2.z);
-
+glut_SpecialUpFuncCallback(key,x,y)
+int key;
+int x,y;
+{
+	VALUE func;
+	func = rb_ary_entry(SpecialUpFunc, glutGetWindow());
 	if (!NIL_P(func))
-		rb_funcall(func, call_id, 3, x, y, z);
-
-  return NULL;
+		rb_funcall(func, callId, 3, INT2NUM(key),INT2NUM(x),INT2NUM(y));
 }
 
-static void GLUTCALLBACK
-glut_SpaceballMotionFuncCallback0(int x, int y, int z) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.x = x;
-  args->arg1.y = y;
-  args->arg2.z = z;
-
-  rb_thread_call_with_gvl((gvl_call)glut_SpaceballMotionFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_SpaceballRotateFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(SpaceballRotateFunc, glutGetWindow());
-  VALUE x    = INT2NUM(args->arg0.x);
-  VALUE y    = INT2NUM(args->arg1.y);
-  VALUE z    = INT2NUM(args->arg2.z);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 3, x, y, z);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_SpaceballRotateFuncCallback0(int x, int y, int z) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.x = x;
-  args->arg1.y = y;
-  args->arg2.z = z;
-
-  rb_thread_call_with_gvl((gvl_call)glut_SpaceballRotateFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_SpaceballButtonFuncCallback(struct callback_args *args) {
-	VALUE func   = rb_ary_entry(SpaceballButtonFunc, glutGetWindow());
-  VALUE button = INT2NUM(args->arg0.button);
-  VALUE state  = INT2NUM(args->arg1.state);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 2, button, state);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_SpaceballButtonFuncCallback0(int button, int state) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.button = button;
-  args->arg1.state  = state;
-
-  rb_thread_call_with_gvl((gvl_call)glut_SpaceballButtonFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_ButtonBoxFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(ButtonBoxFunc, glutGetWindow());
-  VALUE button = INT2NUM(args->arg0.button);
-  VALUE state  = INT2NUM(args->arg1.state);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 2, button, state);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_ButtonBoxFuncCallback0(int button, int state) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.button = button;
-  args->arg1.state  = state;
-
-  rb_thread_call_with_gvl((gvl_call)glut_ButtonBoxFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_DialsFuncCallback(struct callback_args *args) {
-	VALUE func  = rb_ary_entry(DialsFunc, glutGetWindow());
-  VALUE dial  = INT2NUM(args->arg0.dial);
-  VALUE value = INT2NUM(args->arg1.value);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 2, dial, value);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_DialsFuncCallback0(int dial, int value) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.dial  = dial;
-  args->arg1.value = value;
-
-  rb_thread_call_with_gvl((gvl_call)glut_DialsFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_TabletMotionFuncCallback(struct callback_args *args) {
-	VALUE func = rb_ary_entry(TabletMotionFunc, glutGetWindow());
-  VALUE x    = INT2NUM(args->arg0.x);
-  VALUE y    = INT2NUM(args->arg1.y);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 2, x, y);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_TabletMotionFuncCallback0(int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.x = x;
-  args->arg1.y = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_TabletMotionFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_TabletButtonFuncCallback(struct callback_args *args) {
-	VALUE func   = rb_ary_entry(TabletButtonFunc, glutGetWindow());
-  VALUE button = INT2NUM(args->arg0.button);
-  VALUE state  = INT2NUM(args->arg1.state);
-  VALUE x      = INT2NUM(args->arg2.x);
-  VALUE y      = INT2NUM(args->arg3.y);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 4, button, state, x, y);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_TabletButtonFuncCallback0(int button, int state, int x, int y) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.button = button;
-  args->arg1.state  = state;
-  args->arg2.x      = x;
-  args->arg3.y      = y;
-
-  rb_thread_call_with_gvl((gvl_call)glut_TabletButtonFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_OverlayDisplayFuncCallback(void) {
-	VALUE func = rb_ary_entry(OverlayDisplayFunc, glutGetWindow());
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 0);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_OverlayDisplayFuncCallback0(void) {
-  rb_thread_call_with_gvl((gvl_call)glut_OverlayDisplayFuncCallback, NULL);
-}
-
-static void *
-glut_WindowStatusFuncCallback(struct callback_args *args) {
-	VALUE func  = rb_ary_entry(WindowStatusFunc, glutGetWindow());
-  VALUE state = INT2NUM(args->arg0.state);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 1, state);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_WindowStatusFuncCallback0(int state) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.state = state;
-
-  rb_thread_call_with_gvl((gvl_call)glut_WindowStatusFuncCallback, args);
-
-  free(args);
-}
-
-static void *
-glut_JoystickFuncCallback(struct callback_args *args) {
-	VALUE func        = rb_ary_entry(JoystickFunc, glutGetWindow());
-  VALUE button_mask = UINT2NUM(args->arg0.button_mask);
-  VALUE x           = INT2NUM(args->arg1.x);
-  VALUE y           = INT2NUM(args->arg2.y);
-  VALUE z           = INT2NUM(args->arg3.z);
-
-	if (!NIL_P(func))
-		rb_funcall(func, call_id, 4, button_mask, x, y, z);
-
-  return NULL;
-}
-
-static void GLUTCALLBACK
-glut_JoystickFuncCallback0(unsigned int button_mask, int x, int y, int z) {
-  struct callback_args *args = alloc_callback_args();
-
-  args->arg0.button_mask = button_mask;
-  args->arg1.x           = x;
-  args->arg2.y           = y;
-  args->arg3.z           = z;
-
-  rb_thread_call_with_gvl((gvl_call)glut_JoystickFuncCallback, args);
-
-  free(args);
-}
 
 /* GLUT color index sub-API. */
 static VALUE
@@ -1237,6 +894,7 @@ VALUE obj,arg1,arg2,arg3,arg4;
 	return Qnil;
 }
 
+
 static VALUE
 glut_GetColor(obj,arg1,arg2)
 VALUE obj,arg1,arg2;
@@ -1250,6 +908,7 @@ VALUE obj,arg1,arg2;
 	return rb_float_new(ret);
 }
 
+
 static VALUE
 glut_CopyColormap(obj,arg1)
 VALUE obj,arg1;
@@ -1259,6 +918,7 @@ VALUE obj,arg1;
 	glutCopyColormap(win);
 	return Qnil;
 }
+
 
 /* GLUT state retrieval sub-API. */
 static VALUE
@@ -1272,6 +932,7 @@ VALUE obj,arg1;
 	return INT2NUM(ret);
 }
 
+
 static VALUE
 glut_DeviceGet(obj,arg1)
 VALUE obj,arg1;
@@ -1282,6 +943,7 @@ VALUE obj,arg1;
 	ret = glutDeviceGet(type);
 	return INT2NUM(ret);
 }
+
 
 /* GLUT extension support sub-API */
 static VALUE
@@ -1303,6 +965,7 @@ VALUE obj;
 	return INT2NUM(ret);
 }
 
+
 static VALUE
 glut_LayerGet(obj,arg1)
 VALUE obj,arg1;
@@ -1317,10 +980,8 @@ VALUE obj,arg1;
 /* GLUT font sub-API */
 
 /* Some glut implementations define font enums as addresses of local functions
- * which are then called by glut internally. This may lead to crashes or bus
- * errors on some platforms, so to be safe we hardcode the values passed
- * to/from ruby
- */
+  which are then called by glut internally. This may lead to crashes or bus errors
+  on some platforms, so to be safe we hardcode the values passed to/from ruby */
 
 static inline void * bitmap_font_map(int f)
 {
@@ -1333,7 +994,7 @@ static inline void * bitmap_font_map(int f)
 		case 5: return (void *)GLUT_BITMAP_HELVETICA_12;
 		case 6: return (void *)GLUT_BITMAP_HELVETICA_18;
 		default:
-			rb_raise(rb_eArgError, "Unsupported font %d", f);
+			rb_raise(rb_eArgError, "Unsupported font");
 	}
 
 	return (void *) 0; /* not reached */
@@ -1345,7 +1006,7 @@ static inline void * stroke_font_map(int f)
 		case 7: return (void *)GLUT_STROKE_ROMAN;
 		case 8: return (void *)GLUT_STROKE_MONO_ROMAN;
 		default:
-			rb_raise(rb_eArgError, "Unsupported font %d", f);
+			rb_raise(rb_eArgError, "Unsupported font");
 	}
 
 	return (void *) 0; /* not reached */
@@ -1376,6 +1037,7 @@ VALUE obj,arg1,arg2;
 	return INT2NUM(ret);
 }
 
+
 static VALUE
 glut_StrokeCharacter(obj,arg1,arg2)
 VALUE obj,arg1,arg2;
@@ -1387,6 +1049,7 @@ VALUE obj,arg1,arg2;
 	glutStrokeCharacter(stroke_font_map(font), character);
 	return Qnil;
 }
+
 
 static VALUE
 glut_StrokeWidth(obj,arg1,arg2)
@@ -1401,6 +1064,7 @@ VALUE obj,arg1,arg2;
 	return INT2NUM(ret);
 }
 
+
 static VALUE
 glut_BitmapLength(obj,arg1,arg2)
 VALUE obj,arg1,arg2;
@@ -1412,6 +1076,7 @@ VALUE obj,arg1,arg2;
 	ret = glutBitmapLength(bitmap_font_map(font), (const unsigned char*)RSTRING_PTR(arg2));
 	return INT2NUM(ret);
 }
+
 
 static VALUE
 glut_StrokeLength(obj,arg1,arg2)
@@ -1440,6 +1105,7 @@ VALUE obj,arg1,arg2,arg3;
 	return Qnil;
 }
 
+
 static VALUE
 glut_SolidSphere(obj,arg1,arg2,arg3)
 VALUE obj,arg1,arg2,arg3;
@@ -1453,6 +1119,7 @@ VALUE obj,arg1,arg2,arg3;
 	glutSolidSphere(radius, slices, stacks);
 	return Qnil;
 }
+
 
 static VALUE
 glut_WireCone(obj,arg1,arg2,arg3,arg4)
@@ -1470,6 +1137,7 @@ VALUE obj,arg1,arg2,arg3,arg4;
 	return Qnil;
 }
 
+
 static VALUE
 glut_SolidCone(obj,arg1,arg2,arg3,arg4)
 VALUE obj,arg1,arg2,arg3,arg4;
@@ -1486,6 +1154,7 @@ VALUE obj,arg1,arg2,arg3,arg4;
 	return Qnil;
 }
 
+
 static VALUE
 glut_WireCube(obj,arg1)
 VALUE obj,arg1;
@@ -1496,6 +1165,7 @@ VALUE obj,arg1;
 	return Qnil;
 }
 
+
 static VALUE
 glut_SolidCube(obj,arg1)
 VALUE obj,arg1;
@@ -1505,6 +1175,7 @@ VALUE obj,arg1;
 	glutSolidCube(size);
 	return Qnil;
 }
+
 
 static VALUE
 glut_WireTorus(obj,arg1,arg2,arg3,arg4)
@@ -1522,6 +1193,7 @@ VALUE obj,arg1,arg2,arg3,arg4;
 	return Qnil;
 }
 
+
 static VALUE
 glut_SolidTorus(obj,arg1,arg2,arg3,arg4)
 VALUE obj,arg1,arg2,arg3,arg4;
@@ -1537,6 +1209,7 @@ VALUE obj,arg1,arg2,arg3,arg4;
 	glutSolidTorus(innerRadius, outerRadius, sides, rings);
 	return Qnil;
 }
+
 
 GLUT_SIMPLE_FUNCTION(WireDodecahedron)
 GLUT_SIMPLE_FUNCTION(SolidDodecahedron)
@@ -1556,6 +1229,7 @@ VALUE obj,arg1;
 	glutWireTeapot(size);
 	return Qnil;
 }
+
 
 static VALUE
 glut_SolidTeapot(obj,arg1)
@@ -1578,6 +1252,7 @@ VALUE obj,arg1;
 	ret = glutVideoResizeGet(param);
 	return INT2NUM(ret);
 }
+
 
 GLUT_SIMPLE_FUNCTION(SetupVideoResizing)
 GLUT_SIMPLE_FUNCTION(StopVideoResizing)
@@ -1686,8 +1361,6 @@ static VALUE module;
 
 DLLEXPORT void Init_glut()
 {
-	call_id = rb_intern("call");
-	
 	module = rb_define_module("Glut");
 	
 	rb_global_variable( &g_menucallback );
@@ -1699,7 +1372,7 @@ DLLEXPORT void Init_glut()
 	rb_define_module_function(module, "glutInitWindowPosition", glut_InitWindowPosition, 2);
 	rb_define_module_function(module, "glutInitWindowSize", glut_InitWindowSize, 2);
 	rb_define_module_function(module, "glutMainLoop", glut_MainLoop, 0);
-	rb_define_module_function(module, "glutCheckLoop", glut_CheckLoop, 0);
+	rb_define_module_function(module, "glutCheckLoop", glut_MainLoop, 0);
 	rb_define_module_function(module, "glutGameModeString", glut_GameModeString, 1);
 	rb_define_module_function(module, "glutEnterGameMode", glut_EnterGameMode, 0);
 	rb_define_module_function(module, "glutLeaveGameMode", glut_LeaveGameMode, 0);
@@ -1965,6 +1638,8 @@ DLLEXPORT void Init_glut()
 	rb_define_const(module, "GLUT_GAME_MODE_REFRESH_RATE", INT2NUM(GLUT_GAME_MODE_REFRESH_RATE));
 	rb_define_const(module, "GLUT_GAME_MODE_DISPLAY_CHANGED", INT2NUM(GLUT_GAME_MODE_DISPLAY_CHANGED));
 	
+	
+	callId = rb_intern("call");
 	
 	WINDOW_CALLBACK_DEFINE(DisplayFunc);
 	WINDOW_CALLBACK_DEFINE(ReshapeFunc);
