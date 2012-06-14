@@ -13,9 +13,15 @@ def have_framework(fw, &b)
   end
 end unless respond_to? :have_framework
 
-# used for mingw cross compilation:
-dir_config("installed")
-$defs.push "-DGLUT_DISABLE_ATEXIT_HACK"
+if ENV['CROSS_COMPILING']
+  dir_config("installed")
+
+  $defs.push "-DFREEGLUT_EXPORTS"
+
+  # libfreeglut is linked to gdi32 and winmm
+  have_library( 'gdi32', 'CreateDC' ) && append_library( $libs, 'gdi32' )
+  have_library( 'winmm', 'timeBeginPeriod' ) && append_library( $libs, 'winmm' )
+end
 
 ok =
   (have_library('opengl32.lib', 'glVertex3d') &&
@@ -23,7 +29,7 @@ ok =
    have_library('glut32.lib',   'gluSolidTeapot')) ||
   (have_library('opengl32') &&
    have_library('glu32') &&
-   have_library('glut32')) ||
+   have_library('glut')) ||
   (have_library('GL',   'glVertex3d') &&
    have_library('GLU',  'gluLookAt') &&
    have_library('glut', 'glutSolidTeapot')) ||
