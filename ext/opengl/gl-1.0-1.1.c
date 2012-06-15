@@ -2609,7 +2609,7 @@ gl_Material(VALUE self, VALUE face, VALUE pname, VALUE param)
 {
   VALUE ary;
 
-	if (RB_TYPE_P(param, T_ARRAY)) {
+	if (TYPE(param) == T_ARRAY) {
 		gl_Materialfv(self, face, pname, param);
   } else if (ary = rb_convert_type(param, T_ARRAY, "Array", "to_a")) {
 		gl_Materialfv(self, face, pname, ary);
