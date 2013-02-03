@@ -29,7 +29,7 @@ GLU and GLUT libraries.
 
 == Install
 
-  gem install opengl -v "~>0.7.0" --pre
+  gem install opengl -v "~>0.7.0"
 
 == Developers
 
