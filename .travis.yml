@@ -10,4 +10,4 @@ rvm:
 before_install:
   - gem install hoe rake-compiler;
   - sudo apt-get install xpra xserver-xorg-video-dummy freeglut3-dev;
-script: "xpra --xvfb=\"Xorg +extension GLX -config /usr/share/doc/xpra/examples/dummy.xorg.conf -logfile ${HOME}/.xpra/xorg.log\"  start :9 && ( env DISPLAY=:9 rake test ; xpra stop :9 )" ; cat ~/.xpra/*
+script: "xpra --xvfb=\"Xorg +extension GLX -config /usr/share/doc/xpra/examples/dummy.xorg.conf -logfile ${HOME}/.xpra/xorg.log\"  start :9 && ( env DISPLAY=:9 rake test ; xpra stop :9 ) ; cat ~/.xpra/*"
