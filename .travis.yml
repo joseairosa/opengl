@@ -9,5 +9,5 @@ rvm:
 #   - rbx-19mode
 before_install:
   - gem install hoe rake-compiler;
-  - sudo apt-get install xpra xserver-xorg-video-dummy;
+  - sudo apt-get install xpra xserver-xorg-video-dummy freeglut3-dev;
 script: "xpra --xvfb=\"Xorg +extension GLX -config /usr/share/doc/xpra/examples/dummy.xorg.conf -logfile ${HOME}/.xpra.log\"  start :9 && ( env DISPLAY=:9 rake test ; xpra stop :9 )"
