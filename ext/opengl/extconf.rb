@@ -32,8 +32,8 @@ ok =
    have_library('glut')) ||
   (have_library('GL',   'glVertex3d') &&
    have_library('GLU',  'gluLookAt') &&
-   have_library('glut', 'glutSolidTeapot')) ||
-  (have_framework('OpenGL') &&
+   have_library('glut', 'glutSolidTeapot') &&
+   have_framework('OpenGL') &&
    have_framework('GLUT') &&
    have_framework('Cocoa'))
 
